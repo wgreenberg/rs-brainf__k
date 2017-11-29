@@ -8,16 +8,17 @@ use std::ops::IndexMut;
 // < left
 // + increment current cell
 // - decr
-// [ start loop, if current cell is zero, branch to ]
-// ]
+// [ start loop
+// ] if curr cell != 0, jmp to [
 // . print at current (ascii)
 // , read at current
 
 #[derive(Debug)]
 #[derive(PartialEq)]
 enum BfError {
-    SyntaxError,
+    MismatchedBraces,
     Segfault,
+    SyntaxError,
 }
 
 type BfStateResult = Result<(), BfError>;
@@ -74,14 +75,34 @@ impl BfState {
         return self.memory[self.pointer];
     }
 
+    /*
+    // XXX: Why don't we need a lifetime annotation here???
+    fn curr_mut(&mut self) -> &mut u8 {
+        return &mut self.memory[self.pointer];
+    }
+    // XXX What the fuck is going on here
+    #[test]
+    fn test_curr_mut() {
+        let mut state = BfState::new();
+
+        let mut num = state.curr_mut();
+        *num = 10;
+        assert_eq!(state.curr(), 10);
+    }
+    */
+
+    fn set_curr(&mut self, value: u8) {
+        self.memory[self.pointer] = value;
+    }
+
     fn inc(&mut self) {
         let (result, _) = self.curr().overflowing_add(1);
-        self.memory[self.pointer] = result;
+        self.set_curr(result);
     }
 
     fn dec(&mut self) {
         let (result, _) = self.curr().overflowing_sub(1);
-        self.memory[self.pointer] = result;
+        self.set_curr(result);
     }
 
     fn left(&mut self) -> BfStateResult {
@@ -108,22 +129,48 @@ fn write(c: u8) {
 
 fn run(program: &str, state: &mut BfState) -> BfStateResult {
     let mut result = Ok(());
-    for (_, instruction) in program.char_indices() {
-        // Result<(), str>
-        result = match instruction {
+    let mut pc_stack: Vec<usize> = Vec::new();
+    let mut pc = 0;
+    let symbols: Vec<char> = program.chars().collect();
+    while pc < symbols.len() {
+        let sym = symbols[pc];
+        result = match sym {
             '+' => Ok(state.inc()),
             '-' => Ok(state.dec()),
             '>' => Ok(state.right()),
             '<' => state.left(),
-            ',' => Ok(state.memory[state.pointer] = read()),
+            ',' => Ok(state.set_curr(read())),
             '.' => Ok(write(state.curr())),
+            '[' => Ok(pc_stack.push(pc)),
+            ']' => {
+                if state.curr() != 0 {
+                    match pc_stack.last() {
+                        Some(new_pc) => {
+                            pc = *new_pc;
+                            Ok(())
+                        },
+                        None => Err(BfError::MismatchedBraces),
+                    }
+                } else {
+                    match pc_stack.pop() {
+                        Some(_) => Ok(()),
+                        None => Err(BfError::MismatchedBraces),
+                    }
+                }
+            },
             _ => Err(BfError::SyntaxError),
         };
         if result.is_err() {
             return result;
         } 
+        pc = pc + 1;
     }
-    return result;
+
+    if pc_stack.is_empty() {
+        return result;
+    } else {
+        return Err(BfError::MismatchedBraces);
+    }
 }
 
 fn main() {
@@ -188,6 +235,7 @@ mod tests {
         assert_eq!(state.curr(), 40);
     }
 
+
     #[test]
     fn increment_overflow_test() {
         let mut state = BfState::new();
@@ -202,6 +250,13 @@ mod tests {
         state.memory[0] = 0;
         state.dec();
         assert_eq!(state.curr(), 255);
+    }
+
+    #[test]
+    fn set_curr_test() {
+        let mut state = BfState::new();
+        state.set_curr(10);
+        assert_eq!(state.curr(), 10);
     }
 
     #[test]
@@ -249,5 +304,35 @@ mod tests {
     #[test]
     fn run_ok_on_empty_program() {
         assert!(run("", &mut BfState::new()).is_ok());
+    }
+
+    #[test]
+    fn run_empty_loop() {
+        let mut state = BfState::new();
+        assert!(run("[]", &mut state).is_ok());
+    }
+
+    #[test]
+    fn run_nonempty_loop() {
+        let mut state = BfState::new();
+        assert!(run("++[>+<-]", &mut state).is_ok());
+        assert_eq!(state.memory[0], 0);
+        assert_eq!(state.memory[1], 2);
+    }
+
+    #[test]
+    fn run_fails_on_mismatched_parens() {
+        let mut state = BfState::new();
+        let mut result = run("[]]", &mut state);
+        assert!(result.is_err());
+        assert_eq!(result.err(), Some(BfError::MismatchedBraces));
+
+        result = run("[[]", &mut state);
+        assert!(result.is_err());
+        assert_eq!(result.err(), Some(BfError::MismatchedBraces));
+
+        result = run("]", &mut state);
+        assert!(result.is_err());
+        assert_eq!(result.err(), Some(BfError::MismatchedBraces));
     }
 }
