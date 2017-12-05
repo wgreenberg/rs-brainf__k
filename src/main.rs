@@ -18,11 +18,11 @@ use std::ops::IndexMut;
 enum BfError {
     MismatchedBraces,
     Segfault,
-    SyntaxError,
 }
 
 type BfStateResult = Result<(), BfError>;
 
+#[derive(Debug)]
 struct GrowableVect {
     arr: Vec<u8>,
     default_value: u8,
@@ -127,9 +127,55 @@ fn write(c: u8) {
     io::stdout().flush().expect("flush fucked up");
 }
 
-fn run(program: &str, state: &mut BfState) -> BfStateResult {
-    let mut result = Ok(());
+fn build_pc_pairs(program: &str, pc_pairs: &mut Vec<(usize, usize)>) -> BfStateResult {
     let mut pc_stack: Vec<usize> = Vec::new();
+
+    for (index, sym) in program.char_indices() {
+        if sym == '[' {
+            pc_stack.push(index);
+        }
+        if sym == ']' {
+            let result = match pc_stack.pop() {
+                None => Err(BfError::MismatchedBraces),
+                Some(left_pc) => Ok(pc_pairs.push((left_pc, index))),
+            };
+            if result.is_err() {
+                return result;
+            }
+        }
+    }
+    if !pc_stack.is_empty() {
+        return Err(BfError::MismatchedBraces);
+    }
+
+    return Ok(());
+}
+
+fn match_left_pc(pairs: &Vec<(usize, usize)>, left_pc: usize) -> Option<usize> {
+    for pair in pairs {
+        if pair.0 == left_pc {
+            return Some(pair.1);
+        }
+    }
+    return None;
+}
+
+fn match_right_pc(pairs: &Vec<(usize, usize)>, right_pc: usize) -> Option<usize> {
+    for pair in pairs {
+        if pair.1 == right_pc {
+            return Some(pair.0);
+        }
+    }
+    return None;
+}
+
+fn run(program: &str, state: &mut BfState) -> BfStateResult {
+    let mut pc_pairs: Vec<(usize, usize)> = Vec::new();
+    let mut result = build_pc_pairs(program, &mut pc_pairs);
+    if result.is_err() {
+        return result;
+    }
+
     let mut pc = 0;
     let symbols: Vec<char> = program.chars().collect();
     while pc < symbols.len() {
@@ -141,36 +187,24 @@ fn run(program: &str, state: &mut BfState) -> BfStateResult {
             '<' => state.left(),
             ',' => Ok(state.set_curr(read())),
             '.' => Ok(write(state.curr())),
-            '[' => Ok(pc_stack.push(pc)),
-            ']' => {
-                if state.curr() != 0 {
-                    match pc_stack.last() {
-                        Some(new_pc) => {
-                            pc = *new_pc;
-                            Ok(())
-                        },
-                        None => Err(BfError::MismatchedBraces),
-                    }
-                } else {
-                    match pc_stack.pop() {
-                        Some(_) => Ok(()),
-                        None => Err(BfError::MismatchedBraces),
-                    }
+            '[' => {
+                if state.curr() == 0 {
+                    pc = match_left_pc(&pc_pairs, pc).unwrap();
                 }
+                Ok(())
             },
-            _ => Err(BfError::SyntaxError),
+            ']' => {
+                pc = match_right_pc(&pc_pairs, pc).unwrap() - 1;
+                Ok(())
+            },
+            _ => Ok(()),
         };
         if result.is_err() {
             return result;
         } 
         pc = pc + 1;
     }
-
-    if pc_stack.is_empty() {
-        return result;
-    } else {
-        return Err(BfError::MismatchedBraces);
-    }
+    return result;
 }
 
 fn main() {
@@ -288,17 +322,10 @@ mod tests {
     }
 
     #[test]
-    fn run_propogates_segfault_err() {
+    fn run_propagates_segfault_err() {
         let result = run("<", &mut BfState::new());
         assert!(result.is_err());
         assert_eq!(result.err(), Some(BfError::Segfault));
-    }
-
-    #[test]
-    fn run_handles_syntax_err() {
-        let result = run("fuck", &mut BfState::new());
-        assert!(result.is_err());
-        assert_eq!(result.err(), Some(BfError::SyntaxError));
     }
 
     #[test]
@@ -321,6 +348,33 @@ mod tests {
     }
 
     #[test]
+    fn run_loop_with_overflow() {
+        let mut state = BfState::new();
+        assert!(run("-[->+<]", &mut state).is_ok());
+        assert_eq!(state.memory[0], 0);
+        assert_eq!(state.memory[1], 255);
+
+        state = BfState::new();
+        assert!(run("[+]", &mut state).is_ok());
+        assert!(run("+[+>+<]", &mut state).is_ok());
+        assert_eq!(state.memory[0], 0);
+        assert_eq!(state.memory[1], 255);
+    }
+
+    #[test]
+    fn run_noop_loop() {
+        assert!(run("[<]", &mut BfState::new()).is_ok());
+    }
+
+    #[test]
+    fn run_nested_loops() {
+        let mut state = BfState::new();
+        assert!(run("-[->+<]", &mut state).is_ok());
+        assert_eq!(state.memory[0], 0);
+        assert_eq!(state.memory[1], 255);
+    }
+
+    #[test]
     fn run_fails_on_mismatched_parens() {
         let mut state = BfState::new();
         let mut result = run("[]]", &mut state);
@@ -334,5 +388,11 @@ mod tests {
         result = run("]", &mut state);
         assert!(result.is_err());
         assert_eq!(result.err(), Some(BfError::MismatchedBraces));
+    }
+
+    #[test]
+    fn run_nontrivial_empty_loops() {
+        assert!(run("[[[]]]", &mut BfState::new()).is_ok());
+        assert!(run("[][][]", &mut BfState::new()).is_ok());
     }
 }
