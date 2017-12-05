@@ -80,7 +80,7 @@ impl BfState {
     fn curr_mut(&mut self) -> &mut u8 {
         return &mut self.memory[self.pointer];
     }
-    // XXX What the fuck is going on here
+    // XXX corresponding test to bizarre behavior above
     #[test]
     fn test_curr_mut() {
         let mut state = BfState::new();
@@ -119,12 +119,12 @@ impl BfState {
 }
 
 fn read() -> u8 {
-    return io::stdin().bytes().next().expect("failed to read").expect("fucking hell");
+    return io::stdin().bytes().next().expect("reached end of stdin").expect("failed to extract bytes");
 }
 
 fn write(c: u8) {
     print!("{}", c as char);
-    io::stdout().flush().expect("flush fucked up");
+    io::stdout().flush().expect("stdout.flush() failed");
 }
 
 fn build_pc_pairs(program: &str, pc_pairs: &mut Vec<(usize, usize)>) -> BfStateResult {
@@ -208,13 +208,12 @@ fn run(program: &str, state: &mut BfState) -> BfStateResult {
 }
 
 fn main() {
-    // ./brainfuck <file.bf>
     for arg in env::args().skip(1) {
         let mut buf = String::new();
         let mut file = File::open(arg).expect("couldn't open that file bro");
         file.read_to_string(&mut buf).expect("couldn't read from file");
         let mut state = BfState::new();
-        run(buf.trim(), &mut state).expect("there was a fucking error");
+        run(buf.trim(), &mut state).expect("error running bf program!");
         println!("");
     }
 }
