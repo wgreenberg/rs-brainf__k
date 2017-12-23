@@ -127,7 +127,7 @@ fn write(c: u8) {
     io::stdout().flush().expect("stdout.flush() failed");
 }
 
-fn build_pc_pairs(program: &str, pc_pairs: &mut Vec<(usize, usize)>) -> BfStateResult {
+fn build_pc_pairs(program: &str, pc_pairs: &mut Vec<usize>) -> BfStateResult {
     let mut pc_stack: Vec<usize> = Vec::new();
 
     for (index, sym) in program.char_indices() {
@@ -135,13 +135,13 @@ fn build_pc_pairs(program: &str, pc_pairs: &mut Vec<(usize, usize)>) -> BfStateR
             pc_stack.push(index);
         }
         if sym == ']' {
-            let result = match pc_stack.pop() {
-                None => Err(BfError::MismatchedBraces),
-                Some(left_pc) => Ok(pc_pairs.push((left_pc, index))),
+            match pc_stack.pop() {
+                None => return Err(BfError::MismatchedBraces),
+                Some(left_pc) => {
+                    pc_pairs[index] = left_pc;
+                    pc_pairs[left_pc] = index;
+                },
             };
-            if result.is_err() {
-                return result;
-            }
         }
     }
     if !pc_stack.is_empty() {
@@ -151,26 +151,9 @@ fn build_pc_pairs(program: &str, pc_pairs: &mut Vec<(usize, usize)>) -> BfStateR
     return Ok(());
 }
 
-fn match_left_pc(pairs: &Vec<(usize, usize)>, left_pc: usize) -> Option<usize> {
-    for pair in pairs {
-        if pair.0 == left_pc {
-            return Some(pair.1);
-        }
-    }
-    return None;
-}
-
-fn match_right_pc(pairs: &Vec<(usize, usize)>, right_pc: usize) -> Option<usize> {
-    for pair in pairs {
-        if pair.1 == right_pc {
-            return Some(pair.0);
-        }
-    }
-    return None;
-}
-
 fn run(program: &str, state: &mut BfState) -> BfStateResult {
-    let mut pc_pairs: Vec<(usize, usize)> = Vec::new();
+    let mut pc_pairs: Vec<usize> = Vec::new();
+    pc_pairs.resize(program.len(), 0);
     let mut result = build_pc_pairs(program, &mut pc_pairs);
     if result.is_err() {
         return result;
@@ -189,19 +172,19 @@ fn run(program: &str, state: &mut BfState) -> BfStateResult {
             '.' => Ok(write(state.curr())),
             '[' => {
                 if state.curr() == 0 {
-                    pc = match_left_pc(&pc_pairs, pc).unwrap();
+                    pc = pc_pairs[pc];
                 }
                 Ok(())
             },
             ']' => {
-                pc = match_right_pc(&pc_pairs, pc).unwrap() - 1;
+                pc = pc_pairs[pc] - 1;
                 Ok(())
             },
             _ => Ok(()),
         };
         if result.is_err() {
             return result;
-        } 
+        }
         pc = pc + 1;
     }
     return result;
