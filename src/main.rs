@@ -23,12 +23,12 @@ enum BfError {
 type BfStateResult = Result<(), BfError>;
 
 #[derive(Debug)]
-struct GrowableVect {
+struct GrowableVec {
     arr: Vec<u8>,
     default_value: u8,
 }
 
-impl Index<usize> for GrowableVect {
+impl Index<usize> for GrowableVec {
     type Output = u8;
 
     fn index(&self, index: usize) -> &u8 {
@@ -39,7 +39,7 @@ impl Index<usize> for GrowableVect {
     }
 }
 
-impl IndexMut<usize> for GrowableVect {
+impl IndexMut<usize> for GrowableVec {
     fn index_mut<'a>(&'a mut self, index: usize) -> &'a mut u8 {
         if index >= self.arr.len() {
             self.arr.resize(index + 1, self.default_value);
@@ -48,10 +48,10 @@ impl IndexMut<usize> for GrowableVect {
     }
 }
 
-impl GrowableVect {
-    fn new() -> GrowableVect {
+impl GrowableVec {
+    fn new() -> GrowableVec {
         let arr: Vec<u8> = Vec::new();
-        GrowableVect {
+        GrowableVec {
             arr: arr,
             default_value: 0,
         }
@@ -59,14 +59,14 @@ impl GrowableVect {
 }
 
 struct BfState {
-    memory: GrowableVect,
+    memory: GrowableVec,
     pointer: usize,
 }
 
 impl BfState {
     fn new() -> BfState {
         BfState {
-            memory: GrowableVect::new(),
+            memory: GrowableVec::new(),
             pointer: 0,
         }
     }
@@ -222,17 +222,17 @@ fn main() {
 mod tests {
     use super::*;
 
-    // GrowableVect
+    // GrowableVec
     #[test]
     fn can_index_growable_vects() {
-        let mut vect = GrowableVect::new();
+        let mut vect = GrowableVec::new();
         vect[0] = 33;
         assert_eq!(vect[0], 33);
     }
 
     #[test]
     fn growable_vects_have_sensible_index_defaults() {
-        let vect = GrowableVect::new();
+        let vect = GrowableVec::new();
         assert_eq!(vect[0], 0);
         assert_eq!(vect[33], 0);
     }
