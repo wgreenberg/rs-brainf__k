@@ -127,43 +127,45 @@ fn write(c: u8) {
     io::stdout().flush().expect("stdout.flush() failed");
 }
 
-fn build_pc_pairs(program: &str, pc_pairs: &mut Vec<usize>) -> BfStateResult {
-    let mut pc_stack: Vec<usize> = Vec::new();
+// Constructs a mapping of the program counter (pc) to jump to at any given
+// square bracket in the program
+fn build_pc_map(program: &str) -> Result<Vec<usize>, BfError> {
+    let mut stack: Vec<usize> = Vec::new();
+    let mut map: Vec<usize> = Vec::new();
+    map.resize(program.len(), 0);
 
     for (index, sym) in program.char_indices() {
         if sym == '[' {
-            pc_stack.push(index);
+            stack.push(index);
         }
         if sym == ']' {
-            match pc_stack.pop() {
+            match stack.pop() {
                 None => return Err(BfError::MismatchedBraces),
                 Some(left_pc) => {
-                    pc_pairs[index] = left_pc;
-                    pc_pairs[left_pc] = index;
+                    map[index] = left_pc;
+                    map[left_pc] = index;
                 },
             };
         }
     }
-    if !pc_stack.is_empty() {
+    if !stack.is_empty() {
         return Err(BfError::MismatchedBraces);
     }
 
-    return Ok(());
+    return Ok(map);
 }
 
 fn run(program: &str, state: &mut BfState) -> BfStateResult {
-    let mut pc_pairs: Vec<usize> = Vec::new();
-    pc_pairs.resize(program.len(), 0);
-    let mut result = build_pc_pairs(program, &mut pc_pairs);
-    if result.is_err() {
-        return result;
-    }
+    let pc_map = match build_pc_map(program) {
+        Err(e) => return Err(e),
+        Ok(map) => map,
+    };
 
     let mut pc = 0;
     let symbols: Vec<char> = program.chars().collect();
     while pc < symbols.len() {
         let sym = symbols[pc];
-        result = match sym {
+        let result = match sym {
             '+' => Ok(state.inc()),
             '-' => Ok(state.dec()),
             '>' => Ok(state.right()),
@@ -172,12 +174,12 @@ fn run(program: &str, state: &mut BfState) -> BfStateResult {
             '.' => Ok(write(state.curr())),
             '[' => {
                 if state.curr() == 0 {
-                    pc = pc_pairs[pc];
+                    pc = pc_map[pc];
                 }
                 Ok(())
             },
             ']' => {
-                pc = pc_pairs[pc] - 1;
+                pc = pc_map[pc] - 1;
                 Ok(())
             },
             _ => Ok(()),
@@ -187,7 +189,7 @@ fn run(program: &str, state: &mut BfState) -> BfStateResult {
         }
         pc = pc + 1;
     }
-    return result;
+    return Ok(());
 }
 
 fn main() {
